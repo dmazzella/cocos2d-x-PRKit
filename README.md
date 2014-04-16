@@ -9,5 +9,5 @@ cocos2d-x-PRKit
 
 -  调整代码，适应cocos2d-x 3.0版本
 -  该项目为PRKit(https://github.com/asinesio/cocos2d-PRKit)的cocos2d-x版本
--  使用例子可以参考[PRKitDemo]((https://github.com/ChipmunkCommunityCN/RockChipmunk2D/tree/master/Classes/PRKitDemo)
+-  使用例子可以参考[PRKitDemo](https://github.com/ChipmunkCommunityCN/RockChipmunk2D/tree/master/Classes/PRKitDemo)
 
