@@ -1,5 +1,5 @@
 /*
- PRFilledPolygon.m
+ PRFilledPolygon.cpp
  
  PRKit:  Precognitive Research additions to Cocos2D.  http://cocos2d-iphone.org
  Contact us if you like it:  http://precognitiveresearch.com
@@ -7,9 +7,10 @@
  Created by Andy Sinesio on 6/25/10.
  Copyright 2011 Precognitive Research, LLC. All rights reserved.
  
- This class fills a polygon as described by an array of NSValue-encapsulated points with a texture.
+ This class fills a polygon, described by an array of vertices, with a texture.
  
  Translated in C++ for Cocos2d-X by Damiano Mazzella on 19/03/2012
+ Updated by Petro Shmigelskyi on 03/28/2015
  
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,13 +33,13 @@
  */
 
 #include "PRFilledPolygon.h"
-#include "PRRatcliffTriangulator.h"
+#include "triangulate.h"
 
-#define __GLES2 1
 
-PRFilledPolygon* PRFilledPolygon::filledPolygonWithPointsAndTexture(Vector2dVector &polygonPoints, Texture2D * fillTexture) {
-    PRFilledPolygon *pRet = new PRFilledPolygon();
-    if(pRet && pRet->initWithPointsAndTexture(polygonPoints, fillTexture))
+FilledPolygon* FilledPolygon::create(Texture2D* texture, const std::vector<Vec2> &texturePolygon, bool determineBounds)
+{
+    FilledPolygon *pRet = new FilledPolygon();
+    if(pRet && pRet->init(texture, texturePolygon, determineBounds))
 	{
 		pRet->autorelease();
 		return pRet;
@@ -47,174 +48,153 @@ PRFilledPolygon* PRFilledPolygon::filledPolygonWithPointsAndTexture(Vector2dVect
 	return NULL;
 }
 
-
-PRFilledPolygon* PRFilledPolygon::filledPolygonWithPointsAndTextureUsingTriangulator(Vector2dVector &polygonPoints, Texture2D *fillTexture, PRRatcliffTriangulator *polygonTriangulator) {
+bool FilledPolygon::init(Texture2D* texture, const std::vector<Vec2> &texturePolygon, bool determineBounds)
+{
+    GLProgram *glProgram = GLProgramCache::getInstance()->getGLProgram(GLProgram::SHADER_NAME_POSITION_TEXTURE_U_COLOR);
+    setGLProgramState(GLProgramState::create(glProgram));
     
-    PRFilledPolygon *pRet = new PRFilledPolygon();
-    if(pRet && pRet->initWithPointsandTextureusingTriangulator(polygonPoints, fillTexture,polygonTriangulator))
-	{
-		pRet->autorelease();
-		return pRet;
-	}
-	CC_SAFE_DELETE(pRet);
-	return NULL;
-}
-
-bool PRFilledPolygon::initWithPointsAndTexture(Vector2dVector &polygonPoints, Texture2D * fillTexture) {
-    PRRatcliffTriangulator *polygonTriangulator = new PRRatcliffTriangulator();
-    return initWithPointsandTextureusingTriangulator(polygonPoints, fillTexture, polygonTriangulator);;
-}
-
-
-bool PRFilledPolygon::initWithPointsandTextureusingTriangulator(Vector2dVector &polygonPoints, Texture2D *fillTexture, PRRatcliffTriangulator* polygonTriangulator) {
-    
-    triangulator = polygonTriangulator;
-    
-#ifdef __GLES2
-    setShaderProgram(ShaderCache::getInstance()->getProgram(GLProgram::SHADER_NAME_POSITION_TEXTURE));
-#endif
-    
-    setTexture(fillTexture);
-    setPoints(polygonPoints);
+    setTexture(texture);
+    setTexturePolygon(texturePolygon, determineBounds);
+    updateColor();
     
 	return true;
 }
 
-void PRFilledPolygon::setPoints(Vector2dVector &points) {
-    CC_SAFE_FREE(areaTrianglePoints);
-    CC_SAFE_FREE(textureCoordinates);
-    
-    Vector2dVector triangulatedPoints = PRRatcliffTriangulator::triangulateVertices(points);
-    
-    areaTrianglePointCount = triangulatedPoints.size();
-    areaTrianglePoints = (Point*) malloc(sizeof(Point) * areaTrianglePointCount);
-    textureCoordinates = (Point*) malloc(sizeof(Point) * areaTrianglePointCount);
-    
-    for (int i = 0; i < areaTrianglePointCount; i++) {
-        Vector2d v = (Vector2d)triangulatedPoints.at(i);
-        areaTrianglePoints[i] = Point(v.GetX(), v.GetY());
-    }
-    
-    calculateTextureCoordinates();
-}
 
-void PRFilledPolygon::cleanup()
+FilledPolygon::FilledPolygon()
+: _verticesCount(0)
+, _texture(nullptr)
+, _positionTriangles(nullptr)
+, _textureTriangles(nullptr)
+, _origin(Vec2::ZERO)
+{}
+
+FilledPolygon::~FilledPolygon()
 {
-    CC_SAFE_RELEASE_NULL(texture);
-	CC_SAFE_FREE(triangulator);
-    CC_SAFE_FREE(areaTrianglePoints);
-    CC_SAFE_FREE(textureCoordinates);
-    CCNode::cleanup();
+    CC_SAFE_RELEASE_NULL(_texture);
+    CC_SAFE_DELETE_ARRAY(_positionTriangles);
+    CC_SAFE_DELETE_ARRAY(_textureTriangles);
 }
 
-void PRFilledPolygon::calculateTextureCoordinates() {
-    for (int j = 0; j < areaTrianglePointCount; j++) {
-        textureCoordinates[j] = areaTrianglePoints[j] * 1.0f / texture->getPixelsWide() * CC_CONTENT_SCALE_FACTOR();
-        textureCoordinates[j].y = 1.0f - textureCoordinates[j].y;
-    }
-}
 
-void PRFilledPolygon::updateBlendFunc() {
-    // it's possible to have an untextured sprite
-    if( !texture || !texture->hasPremultipliedAlpha() ) {
-        blendFunc.src = GL_SRC_ALPHA;
-        blendFunc.dst = GL_ONE_MINUS_SRC_ALPHA;
-    } else {
-        blendFunc.src = CC_BLEND_SRC;
-        blendFunc.dst = CC_BLEND_DST;
-    }
-}
-
-void PRFilledPolygon::setBlendFunc(BlendFunc blendFuncIn) {
-    blendFunc = blendFuncIn;
-}
-
-void PRFilledPolygon::setTexture(Texture2D* texture2D) {
-    CCAssert(texture2D, "NO TEXTURE SET");
-    CC_SAFE_RELEASE(texture);
-	
-    texture = texture2D;
-    CC_SAFE_RETAIN(texture);
-    
-    Texture2D::TexParams texParams = { GL_NEAREST, GL_NEAREST, GL_REPEAT, GL_REPEAT };
-	texture->setTexParameters(texParams);
-    
-    updateBlendFunc();
-	calculateTextureCoordinates();
-}
-
-Texture2D* PRFilledPolygon::getTexture() {
-    return texture;
-}
-
-void PRFilledPolygon::draw(Renderer *renderer, const kmMat4& transform, bool transformUpdated)
+void FilledPolygon::setTexturePolygon(const std::vector<Vec2> &texturePolygon, bool determineBounds)
 {
-    if(areaTrianglePointCount <= 1)
-        return;
+    CC_SAFE_DELETE_ARRAY(_positionTriangles);
+    CC_SAFE_DELETE_ARRAY(_textureTriangles);
     
-#ifdef __GLES2
+    _determineBounds = determineBounds;
     
-    CC_NODE_DRAW_SETUP();
+    // triangulate polygon using Ratcliff's triangulator
+    std::vector<Vec2> triangulatedVertices;
+    Triangulate::Process(texturePolygon, triangulatedVertices);
     
-    GL::bindTexture2D(texture->getName());
+    _verticesCount = (int)triangulatedVertices.size();
+    _positionTriangles = new Vec2[_verticesCount];
+    _textureTriangles = new Vec2[_verticesCount];
     
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    
-    GL::blendFunc(blendFunc.src, blendFunc.dst);
-    
-    GL::enableVertexAttribs(GL::VERTEX_ATTRIB_FLAG_POSITION | GL::VERTEX_ATTRIB_FLAG_TEX_COORDS);
-    
-    if(sizeof(Point) == sizeof(Vertex2F)) {
+    // determine polygon bounds
+    if (_determineBounds) {
+        _origin = Vec2(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+        Vec2 _maxBound = Vec2::ZERO;
         
-        glVertexAttribPointer(GLProgram::VERTEX_ATTRIB_POSITION, 2, GL_FLOAT, GL_FALSE, 0, areaTrianglePoints);
-        glVertexAttribPointer(GLProgram::VERTEX_ATTRIB_TEX_COORDS, 2, GL_FLOAT, GL_FALSE, 0, textureCoordinates);
-        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)areaTrianglePointCount);
+        for (const Vec2& v : triangulatedVertices){
+            if(v.x < _origin.x) _origin.x = v.x;
+            if(v.y < _origin.y) _origin.y = v.y;
+            if(v.x > _maxBound.x) _maxBound.x = v.x;
+            if(v.y > _maxBound.y) _maxBound.y = v.y;
+        }
+        
+        setContentSize(Size(_maxBound - _origin));
+        
+        for (int i = 0; i < _verticesCount; i++) {
+            _positionTriangles[i] = triangulatedVertices.at(i) - _origin;
+        }
         
     } else {
-        
-        Vertex2F* newAreaTrianglePoints = new Vertex2F[areaTrianglePointCount];
-        Vertex2F* newTextureCoordinates = new Vertex2F[areaTrianglePointCount];
-        
-        if(newAreaTrianglePoints != NULL && newTextureCoordinates != NULL) {
-            
-            for( unsigned int i = 0; i < areaTrianglePointCount; i++) {
-                newTextureCoordinates[i].x = textureCoordinates[i].x;
-                newTextureCoordinates[i].y = textureCoordinates[i].y;
-                
-                newAreaTrianglePoints[i].x = areaTrianglePoints[i].x;
-                newAreaTrianglePoints[i].y = areaTrianglePoints[i].y;
-            }
-            glVertexAttribPointer(GLProgram::VERTEX_ATTRIB_POSITION, 2, GL_FLOAT, GL_FALSE, 0, newAreaTrianglePoints);
-            glVertexAttribPointer(GLProgram::VERTEX_ATTRIB_TEX_COORDS, 2, GL_FLOAT, GL_FALSE, 0, newTextureCoordinates);
-            glDrawArrays(GL_TRIANGLES, 0, (GLsizei)areaTrianglePointCount);
-            
-            CC_SAFE_DELETE_ARRAY(newAreaTrianglePoints);
-            CC_SAFE_DELETE_ARRAY(newTextureCoordinates);
+        for (int i = 0; i < _verticesCount; i++) {
+            _positionTriangles[i] = triangulatedVertices.at(i);
         }
     }
     
+    calculateTextureCoordinates();
+    
+    // set parameters to shader attributes
+    getGLProgramState()->setVertexAttribPointer(GLProgram::ATTRIBUTE_NAME_POSITION, 2, GL_FLOAT, GL_FALSE, 0, _positionTriangles);
+    getGLProgramState()->setVertexAttribPointer(GLProgram::ATTRIBUTE_NAME_TEX_COORD, 2, GL_FLOAT, GL_FALSE, 0, _textureTriangles);
+}
+
+void FilledPolygon::calculateTextureCoordinates()
+{
+    if (_determineBounds) {
+        for (int j = 0; j < _verticesCount; j++) {
+            _textureTriangles[j].x = (_positionTriangles[j].x + _origin.x) * 1.0f / _texture->getPixelsWide() * CC_CONTENT_SCALE_FACTOR();
+            _textureTriangles[j].y = 1.0f - (_positionTriangles[j].y + _origin.y) * 1.0f / _texture->getPixelsHigh() * CC_CONTENT_SCALE_FACTOR();
+        }
+    } else {
+        for (int j = 0; j < _verticesCount; j++) {
+            _textureTriangles[j].x = _positionTriangles[j].x * 1.0f / _texture->getPixelsWide() * CC_CONTENT_SCALE_FACTOR();
+            _textureTriangles[j].y = 1.0f - _positionTriangles[j].y * 1.0f / _texture->getPixelsHigh() * CC_CONTENT_SCALE_FACTOR();
+        }
+    }
+}
+
+void FilledPolygon::setTexture(Texture2D* texture)
+{
+    if( _texture != texture )
+    {
+        CCASSERT(dynamic_cast<Texture2D*>(texture), "setTexture expects a Texture2D. Invalid argument");
+        
+        CC_SAFE_RELEASE(_texture);
+        CC_SAFE_RETAIN(texture);
+        _texture = texture;
+        
+        // set repeat mode for POT-size texture
+        if(_texture->getPixelsWide() == ccNextPOT(_texture->getPixelsWide()) && _texture->getPixelsHigh() == ccNextPOT(_texture->getPixelsHigh())){
+            _texture->setTexParameters({ GL_LINEAR, GL_LINEAR, GL_REPEAT, GL_REPEAT });
+        }
+        
+        // update blend func
+        if ( !_texture || !_texture->hasPremultipliedAlpha() ) {
+            _blendFunc.src = GL_SRC_ALPHA;
+            _blendFunc.dst = GL_ONE_MINUS_SRC_ALPHA;
+        } else {
+            _blendFunc.src = CC_BLEND_SRC;
+            _blendFunc.dst = CC_BLEND_DST;
+        }
+        
+        // update texture triangles
+        if (_textureTriangles != nullptr) {
+            calculateTextureCoordinates();
+        }
+    }
+}
+
+void FilledPolygon::updateColor()
+{
+    // set parameters to shader uniform
+    getGLProgramState()->setUniformVec4("u_color", Vec4(_displayedColor.r, _displayedColor.g, _displayedColor.b, _displayedOpacity)/255.0f);
+}
+
+
+void FilledPolygon::draw(Renderer *renderer, const Mat4 &transform, uint32_t flags)
+{
+    if(_verticesCount <= 1)
+        return;
+    
+    _customCommand.init(_globalZOrder);
+    _customCommand.func = CC_CALLBACK_0(FilledPolygon::onDraw, this, transform, flags);
+    renderer->addCommand(&_customCommand);
+}
+
+void FilledPolygon::onDraw(const Mat4 &transform, uint32_t flags)
+{
+    GL::bindTexture2D(_texture->getName());
+    GL::blendFunc(_blendFunc.src, _blendFunc.dst);
+    
+    getGLProgramState()->apply(transform);
+    
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)_verticesCount);
+    
     CC_INCREMENT_GL_DRAWS(1);
-    
-#else
-    
-    Node::draw();
-    
-    glDisableClientState(GL_COLOR_ARRAY);
-    
-    // we have a pointer to vertex points so enable client state
-    glBindTexture(GL_TEXTURE_2D, texture->getName());
-    
-    
-    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
-	glVertexPointer(2, GL_FLOAT, 0, areaTrianglePoints);
-	glTexCoordPointer(2, GL_FLOAT, 0, textureCoordinates);
-	
-    glDrawArrays(GL_TRIANGLES, 0, areaTrianglePointCount);
-    
-    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    
-    //Restore texture matrix and switch back to modelview matrix
-    glEnableClientState(GL_COLOR_ARRAY);
-#endif
+    CHECK_GL_ERROR_DEBUG();
 }

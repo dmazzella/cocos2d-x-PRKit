@@ -54,33 +54,10 @@
 /*****************************************************************/
 
 
-#include <vector>  // Include STL vector class.
+#include "math/Vec2.h"
+#include <vector>
 
-class Vector2d
-{
-public:
-	Vector2d(float x,float y)
-	{
-		Set(x,y);
-	};
-	
-	float GetX(void) const { return mX; };
-	
-	float GetY(void) const { return mY; };
-	
-	void  Set(float x,float y)
-	{
-		mX = x;
-		mY = y;
-	};
-private:
-	float mX;
-	float mY;
-};
-
-// Typedef an STL vector of vertices which are used to represent
-// a polygon/contour and a series of triangles.
-typedef std::vector< Vector2d > Vector2dVector;
+USING_NS_CC_MATH;
 
 
 class Triangulate
@@ -89,11 +66,11 @@ public:
 	
 	// triangulate a contour/polygon, places results in STL vector
 	// as series of triangles.
-	static bool Process(const Vector2dVector &contour,
-						Vector2dVector &result);
+    static bool Process(const std::vector<Vec2> &contour,
+						std::vector<Vec2> &result);
 	
 	// compute area of a contour/polygon
-	static float Area(const Vector2dVector &contour);
+	static float Area(const std::vector<Vec2> &contour);
 	
 	// decide if point Px/Py is inside triangle defined by
 	// (Ax,Ay) (Bx,By) (Cx,Cy)
@@ -104,7 +81,7 @@ public:
 	
 	
 private:
-	static bool Snip(const Vector2dVector &contour,int u,int v,int w,int n,int *V);
+	static bool Snip(const std::vector<Vec2> &contour,int u,int v,int w,int n,int *V);
 	
 };
 

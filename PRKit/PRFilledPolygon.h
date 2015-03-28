@@ -7,9 +7,10 @@
  Created by Andy Sinesio on 6/25/10.
  Copyright 2011 Precognitive Research, LLC. All rights reserved.
  
- This class fills a polygon as described by an array of NSValue-encapsulated points with a texture.
+ This class fills a polygon, described by an array of vertices, with a texture.
  
  Translated in C++ for Cocos2d-X by Damiano Mazzella on 19/03/2012
+ Updated by Petro Shmigelskyi on 03/28/2015
  
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -35,62 +36,89 @@
 #define PRFILLEDPOLYGON_H
 
 #include "cocos2d.h"
-#include "PRRatcliffTriangulator.h"
 
 using namespace cocos2d;
 
-class PRFilledPolygon : public Node {
-private:
-	int areaTrianglePointCount;
-    
-	Texture2D *texture;
-	BlendFunc blendFunc;
-    
-	Point *areaTrianglePoints;
-	Point *textureCoordinates;
-    
-    PRRatcliffTriangulator* triangulator;
-    void calculateTextureCoordinates();
-    
+class FilledPolygon : public Node, public TextureProtocol
+{
 public:
     
-    PRFilledPolygon() {
-        areaTrianglePointCount = 0;
-        texture = NULL;
-        areaTrianglePoints = NULL;
-        textureCoordinates = NULL;
-        triangulator = NULL;
-    }
+    /**
+     * Creates a FilledPolygon with a texture and a polygon in points, optionally determine bounding box.
+     *
+     * @note    If bound are determined the content size of the FilledPolygon are equal to size of bounding box,
+     *          and anchor point (0,0) is in a origin of the bounding box.
+     *
+     * @param   texture          A Texture2D object whose texture will be applied to this sprite.
+     * @param   texturePolygon   A vertices of polygon assigned the contents of texture.
+     * @param   determineBounds  Whether or not determine bounds of polygon.
+     * @return  An autoreleased FilledPolygon object.
+     */
+    static FilledPolygon* create(Texture2D* texture, const std::vector<Vec2> &texturePolygon, bool determineBounds = false);
+    
     
     /**
-     Returns an autoreleased polygon.  Default triangulator is used (Ratcliff's).
+     * Origin of bounding box of texture polygon.
      */
-    static PRFilledPolygon* filledPolygonWithPointsAndTexture(Vector2dVector &polygonPoints, Texture2D * fillTexture);
+    virtual const Vec2& getBoundsOrigin() const { return _origin; }
     
     /**
-     Returns an autoreleased filled poly with a supplied triangulator.
+     * Whether or not the FilledPolygon detrmines bounds of texture polygon.
      */
-    static PRFilledPolygon* filledPolygonWithPointsAndTextureUsingTriangulator(Vector2dVector &polygonPoints, Texture2D *fillTexture, PRRatcliffTriangulator *polygonTriangulator);
+    virtual bool isDetermineBounds() const { return _determineBounds; }
     
     /**
-     Initialize the polygon.  polygonPoints will be triangulated.  Default triangulator is used (Ratcliff).
+     * Sets the texture polygon in points.
+     * It will update the texture coordinates and the polygon vertices.
      */
-    bool initWithPointsAndTexture(Vector2dVector &polygonPoints, Texture2D * fillTexture);
+    virtual void setTexturePolygon(const std::vector<Vec2> &texturePolygon, bool determineBounds = false);
     
+    virtual void setTexture(Texture2D *texture) override;
+    virtual Texture2D* getTexture() const override { return _texture; }
+    
+    virtual void updateColor() override;
+    
+    inline void setBlendFunc(const BlendFunc &blendFunc) override { _blendFunc = blendFunc; }
+    inline const BlendFunc& getBlendFunc() const override { return _blendFunc; }
+    
+    virtual void draw(Renderer *renderer, const Mat4 &transform, uint32_t flags) override;
+
+
+CC_CONSTRUCTOR_ACCESS:
+
+    FilledPolygon();
+    virtual ~FilledPolygon();
+
     /**
-     Initialize the polygon.  polygonPoints will be triangulated using the supplied triangulator.
+     * Initializes a FilledPolygon with a texture and a polygon in points, optionally determine bounding box.
+     *
+     * @note    If bound are determined the content size of the FilledPolygon are equal to size of bounding box,
+     *          and anchor point (0,0) is in a origin of the bounding box.
+     *
+     * @param   texture          A Texture2D object whose texture will be applied to this sprite.
+     * @param   texturePolygon   A vertices of polygon assigned the contents of texture.
+     * @param   determineBounds  Whether or not determine bounds of polygon.
+     * @return  true if the sprite is initialized properly, false otherwise.
      */
-    bool initWithPointsandTextureusingTriangulator(Vector2dVector &polygonPoints, Texture2D *fillTexture, PRRatcliffTriangulator* polygonTriangulator);
-    
-    void setPoints(Vector2dVector &points);
-    
-    void setTexture(Texture2D* texture2D);
-	Texture2D* getTexture();
-    void updateBlendFunc();
-    void setBlendFunc(BlendFunc blendFuncIn);
-    virtual void cleanup();
-    virtual void draw(Renderer *renderer, const kmMat4& transform, bool transformUpdated);
-    
+    virtual bool init(Texture2D* texture, const std::vector<Vec2> &texturePolygon, bool determineBounds = false);
+
+
+protected:
+
+    Texture2D *_texture;
+    BlendFunc _blendFunc;
+    CustomCommand _customCommand;
+
+    int _verticesCount;
+    Vec2 *_positionTriangles;
+    Vec2 *_textureTriangles;
+
+    bool _determineBounds;
+    Vec2 _origin;
+
+    virtual void calculateTextureCoordinates();
+
+    void onDraw(const Mat4 &transform, uint32_t flags);
 };
 
 
